@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+ <meta charset="utf-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>Inventario (S3 + Lambda + API Gateway)</title>
+ <style>
+ :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+ body { margin: 2rem; }
+ .card { max-width: 960px; padding: 1.25rem; border: 1px solid #ddd; border-radius: 12px; }
+ .row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+ input, button { padding: .55rem .8rem; font-size: 1rem; }
+ button { cursor: pointer; }
+ table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+ th, td { border: 1px solid #e5e5e5; padding: .6rem .7rem; text-align: left; }
+ thead { background: #fafafa; }
+ .muted { color: #666; font-size: .95rem; }
+ .error { color: #b00020; margin-top: .5rem; }
+ .ok { color: #0a7b27; }
+ code { background: #f6f6f6; padding: .15rem .3rem; border-radius: 4px; }
+ </style>
+</head>
+<body>
+ <div class="card">
+ <h1>Inventario</h1>
+ <p class="muted">
+ Esta pagina consulta la API en <code id="api-url"></code>.
+ Puedes fijar la URL de la API de tres formas (prioridad de mayor a menor):
+ <br>1) Parametro <code>?api=...</code> en la URL
+ <br>2) <code>localStorage.setItem('API_URL','https://...');</code>
+ <br>3) Editando la constante <code>API_BASE_URL</code> en este fichero
+ </p>
+ <div class="row">
+ <label for="store">Tienda:</label>
+ <input id="store" placeholder="p. ej. Berlin" />
+ <button id="btn-load">Cargar</button>
+ <button id="btn-clear">Limpiar filtro</button>
+ <span id="status" class="muted"></span>
+ </div>
+ <table id="tbl">
+ <thead>
+ <tr><th>Tienda</th><th>Articulo</th><th>Cantidad</th></tr>
+ </thead>
+ <tbody></tbody>
+ </table>
+ <p id="err" class="error" hidden></p>
+ </div>
+ <script>
+ const API_BASE_URL_DEFAULT = "https://vfdngdnysa.execute-api.us-east-1.amazonaws.com";
+ const params = new URLSearchParams(location.search);
+ const apiFromQuery = params.get('api');
+ const apiFromStorage = localStorage.getItem('API_URL');
+ const API = (apiFromQuery || apiFromStorage || API_BASE_URL_DEFAULT).replace(/\/+$/, "");
+ document.getElementById('api-url').textContent = API || "(no definida)";
+ if (apiFromQuery) { localStorage.setItem('API_URL', apiFromQuery); }
+ const $tbody = document.querySelector('#tbl tbody');
+ const $store = document.getElementById('store');
+ const $status = document.getElementById('status');
+ const $err = document.getElementById('err');
+ function setStatus(msg, ok=false) { $status.textContent = msg || ''; $status.className = ok ? 'ok' : 'muted'; }
+ function showError(msg) { $err.hidden = false; $err.textContent = msg; }
+ function clearError() { $err.hidden = true; $err.textContent = ''; }
+ function renderRows(items) {
+ if (!Array.isArray(items)) items = [];
+ $tbody.innerHTML = items.map(r => `
+ <tr>
+ <td>${escapeHtml(r.store ?? r.Store ?? '')}</td>
+ <td>${escapeHtml(r.item ?? r.Item ?? '')}</td>
+ <td>${Number(r.count ?? r.Count ?? 0)}</td>
+ </tr>
+ `).join('');
+ }
+ function escapeHtml(s) {
+ return String(s)
+ .replaceAll('&','&amp;').replaceAll('<','&lt;')
+ .replaceAll('>','&gt;').replaceAll('"','&quot;')
+ .replaceAll("'","&#39;");
+ }
+ async function load() {
+ clearError();
+ if (!API || API === "REPLACE_ME_WITH_YOUR_INVOKE_URL") {
+ showError("Configura la URL de la API (usa ?api=..., localStorage o edita REPLACE_ME_WITH_YOUR_INVOKE_URL).");
+ return;
+ }
+ const store = $store.value.trim();
+ const url = store ? `${API}/items/${encodeURIComponent(store)}` : `${API}/items`;
+ setStatus("Cargando...");
+ try {
+ const res = await fetch(url, { method: 'GET' });
+ if (!res.ok) { const txt = await res.text(); throw new Error(`HTTP ${res.status}: ${txt}`); }
+ const data = await res.json();
+ renderRows(data);
+	setStatus(`OK - ${Array.isArray(data) ? data.length : 0} registros`, true);
+ } catch (err) {
+ console.error(err);
+ showError(`Error al cargar datos: ${err.message}`);
+ setStatus("");
+ }
+ }
+ document.getElementById('btn-load').addEventListener('click', load);
+ document.getElementById('btn-clear').addEventListener('click', () => { $store.value = ''; load(); });
+ load();
+ </script>
+</body>
+</html>
